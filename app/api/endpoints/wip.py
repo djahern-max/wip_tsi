@@ -471,3 +471,209 @@ async def export_wip_to_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/latest/with-totals")
+def get_latest_wip_with_totals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get latest WIP snapshots for each project with column totals"""
+
+    # Get latest snapshots for each project (existing logic)
+    latest_dates = (
+        db.query(
+            WIPSnapshot.project_id,
+            func.max(WIPSnapshot.report_date).label("latest_date"),
+        )
+        .group_by(WIPSnapshot.project_id)
+        .subquery()
+    )
+
+    # Get WIP snapshots with project names (like existing /latest endpoint)
+    wip_snapshots = (
+        db.query(WIPSnapshot, Project.name.label("project_name"))
+        .join(Project)
+        .join(
+            latest_dates,
+            (WIPSnapshot.project_id == latest_dates.c.project_id)
+            & (WIPSnapshot.report_date == latest_dates.c.latest_date),
+        )
+        .filter(Project.is_active == True)
+        .order_by(WIPSnapshot.job_number)
+        .all()
+    )
+
+    # Extract snapshots for calculations
+    snapshots = [wip for wip, project_name in wip_snapshots]
+
+    # Calculate column totals
+    def safe_sum(values):
+        """Safely sum values, treating None as 0"""
+        return sum(v for v in values if v is not None)
+
+    # Contract section totals
+    total_original_contract = safe_sum(
+        [s.current_month_original_contract_amount for s in snapshots]
+    )
+    total_change_orders = safe_sum(
+        [s.current_month_change_order_amount for s in snapshots]
+    )
+    total_contract = safe_sum(
+        [s.current_month_total_contract_amount for s in snapshots]
+    )
+    total_prior_contract = safe_sum(
+        [s.prior_month_total_contract_amount for s in snapshots]
+    )
+
+    # Cost section totals
+    total_cost_to_date = safe_sum([s.current_month_cost_to_date for s in snapshots])
+    total_est_cost_complete = safe_sum(
+        [s.current_month_estimated_cost_to_complete for s in snapshots]
+    )
+    total_estimated_final_cost = safe_sum(
+        [s.current_month_estimated_final_cost for s in snapshots]
+    )
+    total_prior_final_cost = safe_sum(
+        [s.prior_month_estimated_final_cost for s in snapshots]
+    )
+
+    # Revenue/Billing section totals
+    total_billed_to_date = safe_sum(
+        [s.current_month_revenue_billed_to_date for s in snapshots]
+    )
+    total_revenue_earned = safe_sum(
+        [s.revenue_earned_to_date_us_gaap for s in snapshots]
+    )
+
+    # Job margin totals
+    total_job_margin = safe_sum(
+        [s.current_month_estimated_job_margin_at_completion for s in snapshots]
+    )
+    total_prior_job_margin = safe_sum(
+        [s.prior_month_estimated_job_margin_at_completion for s in snapshots]
+    )
+
+    # WIP adjustment totals
+    total_costs_excess_billings = safe_sum(
+        [s.current_month_costs_in_excess_billings for s in snapshots]
+    )
+    total_billings_excess_revenue = safe_sum(
+        [s.current_month_billings_excess_revenue for s in snapshots]
+    )
+
+    # Calculate percentage totals (weighted averages)
+    avg_us_gaap_completion = 0
+    avg_job_margin_percent = 0
+
+    if snapshots:
+        # Weight by contract value for meaningful averages
+        total_weight = safe_sum(
+            [s.current_month_total_contract_amount or 0 for s in snapshots]
+        )
+        if total_weight > 0:
+            avg_us_gaap_completion = (
+                sum(
+                    [
+                        (s.us_gaap_percent_completion or 0)
+                        * (s.current_month_total_contract_amount or 0)
+                        for s in snapshots
+                    ]
+                )
+                / total_weight
+            )
+
+            avg_job_margin_percent = (
+                sum(
+                    [
+                        (s.current_month_estimated_job_margin_percent_sales or 0)
+                        * (s.current_month_total_contract_amount or 0)
+                        for s in snapshots
+                    ]
+                )
+                / total_weight
+            )
+
+    # Prepare response
+    totals = {
+        # Contract section
+        "total_original_contract": (
+            float(total_original_contract) if total_original_contract else 0
+        ),
+        "total_change_orders": float(total_change_orders) if total_change_orders else 0,
+        "total_contract": float(total_contract) if total_contract else 0,
+        "total_prior_contract": (
+            float(total_prior_contract) if total_prior_contract else 0
+        ),
+        "contract_variance": (
+            float(total_contract - total_prior_contract)
+            if total_contract and total_prior_contract
+            else 0
+        ),
+        # Cost section
+        "total_cost_to_date": float(total_cost_to_date) if total_cost_to_date else 0,
+        "total_est_cost_complete": (
+            float(total_est_cost_complete) if total_est_cost_complete else 0
+        ),
+        "total_estimated_final_cost": (
+            float(total_estimated_final_cost) if total_estimated_final_cost else 0
+        ),
+        "total_prior_final_cost": (
+            float(total_prior_final_cost) if total_prior_final_cost else 0
+        ),
+        "final_cost_variance": (
+            float(total_estimated_final_cost - total_prior_final_cost)
+            if total_estimated_final_cost and total_prior_final_cost
+            else 0
+        ),
+        # Percentages (weighted averages)
+        "avg_us_gaap_completion": round(float(avg_us_gaap_completion), 2),
+        # Revenue section
+        "total_billed_to_date": (
+            float(total_billed_to_date) if total_billed_to_date else 0
+        ),
+        "total_revenue_earned": (
+            float(total_revenue_earned) if total_revenue_earned else 0
+        ),
+        # Job margin section
+        "total_job_margin": float(total_job_margin) if total_job_margin else 0,
+        "total_prior_job_margin": (
+            float(total_prior_job_margin) if total_prior_job_margin else 0
+        ),
+        "job_margin_variance": (
+            float(total_job_margin - total_prior_job_margin)
+            if total_job_margin and total_prior_job_margin
+            else 0
+        ),
+        "avg_job_margin_percent": round(float(avg_job_margin_percent), 2),
+        # WIP adjustments
+        "total_costs_excess_billings": (
+            float(total_costs_excess_billings) if total_costs_excess_billings else 0
+        ),
+        "total_billings_excess_revenue": (
+            float(total_billings_excess_revenue) if total_billings_excess_revenue else 0
+        ),
+        # Summary stats
+        "total_projects": len(snapshots),
+        "overall_margin_percent": round(
+            (
+                (float(total_job_margin) / float(total_contract) * 100)
+                if total_contract and total_contract != 0
+                else 0
+            ),
+            2,
+        ),
+    }
+
+    # Convert to response format with project names
+    result = []
+    for wip, project_name in wip_snapshots:
+        wip_response = WIPSnapshotResponse.from_orm(wip)
+        wip_response.project_name = project_name
+        result.append(wip_response)
+
+    return {
+        "snapshots": result,
+        "totals": totals,
+        "report_date": snapshots[0].report_date.isoformat() if snapshots else None,
+    }
