@@ -1,0 +1,38 @@
+# FastAPI and dependencies
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.16
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-decouple==3.8
+
+# Data validation
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Email validation (required for EmailStr in Pydantic)
+email-validator==2.1.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1
+
+# Development
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+
+# Data processing (for Excel import) - Python 3.13 compatible versions
+pandas==2.2.3
+openpyxl==3.1.5
+
+# Additional dependencies for Python 3.13
+numpy>=2.0.0
