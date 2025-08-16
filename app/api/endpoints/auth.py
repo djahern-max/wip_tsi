@@ -1,18 +1,14 @@
 from datetime import timedelta
-from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.dependencies import get_db
+from app.dependencies import get_db, get_current_user  # ✅ Import directly here
 from app.models.user import User
 from app.schemas.user import UserLogin
 from app.schemas.auth import Token
 from app.core.security import verify_password, create_access_token
 from app.core.config import settings
-
-if TYPE_CHECKING:
-    from app.dependencies import get_current_user
 
 router = APIRouter()
 security = HTTPBearer()
@@ -44,7 +40,11 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     # Create access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.id, "username": user.username, "role": user.role},
+        data={
+            "sub": str(user.id),
+            "username": user.username,
+            "role": user.role,
+        },  # ✅ Add str()
         expires_delta=access_token_expires,
     )
 
@@ -55,26 +55,3 @@ async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
         username=user.username,
         role=user.role,
     )
-
-
-@router.post("/verify-token")
-async def verify_token_endpoint(
-    db: Session = Depends(get_db), credentials: HTTPBearer = Depends(security)
-):
-    """
-    Verify that the provided token is valid and return user info
-    """
-    from app.dependencies import get_current_user
-
-    current_user = get_current_user(credentials, db)
-
-    return {
-        "valid": True,
-        "user": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "role": current_user.role,
-            "is_active": current_user.is_active,
-        },
-    }

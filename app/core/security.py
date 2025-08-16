@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import jwt  # Change from 'import jwt' to 'from jose import jwt'
+from jose import jwt
+from jose.exceptions import JWTError  # ✅ Add this import
 from passlib.context import CryptContext
 from app.core.config import settings
 
@@ -34,5 +35,5 @@ def verify_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         return payload
-    except jwt.PyJWTError:
+    except JWTError:
         return None
