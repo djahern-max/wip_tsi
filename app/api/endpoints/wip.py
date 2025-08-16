@@ -369,3 +369,115 @@ def get_wip_dashboard_summary(
         ),
         "report_date": report_date or "Latest",
     }
+
+@router.get("/export/excel")
+async def export_wip_to_excel(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Export WIP data to Excel file"""
+    import pandas as pd
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    
+    # Get latest WIP snapshots
+    wip_service = WIPService(db)
+    wip_data = wip_service.get_latest_wip_snapshots()
+    
+    # Convert to DataFrame
+    data_for_export = []
+    for wip in wip_data:
+        data_for_export.append({
+            'Job #': wip.job_number,
+            'Project Name': wip.project_name,
+            'Original Contract': wip.current_month_original_contract_amount,
+            'Change Orders': wip.current_month_change_order_amount,
+            'Total Contract': wip.current_month_total_contract_amount,
+            'Prior Contract': wip.prior_month_total_contract_amount,
+            'Contract Variance': wip.current_vs_prior_contract_variance,
+            'Cost to Date': wip.current_month_cost_to_date,
+            'Est. Cost to Complete': wip.current_month_estimated_cost_to_complete,
+            'Est. Final Cost': wip.current_month_estimated_final_cost,
+            'Prior Final Cost': wip.prior_month_estimated_final_cost,
+            'Final Cost Variance': wip.current_vs_prior_estimated_final_cost_variance,
+            'GAAP % Complete': wip.us_gaap_percent_completion,
+            'Revenue Earned (GAAP)': wip.revenue_earned_to_date_us_gaap,
+            'Job Margin (GAAP)': wip.estimated_job_margin_to_date_us_gaap,
+            'Job Margin %': wip.estimated_job_margin_to_date_percent_sales,
+            'Est. Job Margin': wip.current_month_estimated_job_margin_at_completion,
+            'Prior Job Margin': wip.prior_month_estimated_job_margin_at_completion,
+            'Job Margin Variance': wip.current_vs_prior_estimated_job_margin,
+            'Job Margin % Sales': wip.current_month_estimated_job_margin_percent_sales,
+            'Revenue Billed': wip.current_month_revenue_billed_to_date,
+            'Costs in Excess': wip.current_month_costs_in_excess_billings,
+            'Billings in Excess': wip.current_month_billings_excess_revenue,
+            'Additional Entry': wip.current_month_addl_entry_required,
+            'Report Date': wip.report_date.strftime('%Y-%m-%d') if wip.report_date else None
+        })
+    
+    df = pd.DataFrame(data_for_export)
+    
+    # Create Excel file in memory
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='WIP Report', index=False)
+        
+        # Auto-adjust column widths
+        worksheet = writer.sheets['WIP Report']
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+    
+    output.seek(0)
+    
+    # Return Excel file
+    today = pd.Timestamp.now().strftime('%Y-%m-%d')
+    filename = f"TSI_WIP_Report_{today}.xlsx"
+    
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+        })
+
+    df = pd.DataFrame(data_for_export)
+    
+    # Create Excel file in memory
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='WIP Report', index=False)
+        
+        # Auto-adjust column widths
+        worksheet = writer.sheets['WIP Report']
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+    
+    output.seek(0)
+    
+    # Return Excel file
+    today = pd.Timestamp.now().strftime('%Y-%m-%d')
+    filename = f"TSI_WIP_Report_{today}.xlsx"
+    
+    return StreamingResponse(
+        BytesIO(output.read()),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
