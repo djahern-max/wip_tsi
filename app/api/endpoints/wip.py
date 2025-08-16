@@ -380,17 +380,37 @@ async def export_wip_to_excel(
     from io import BytesIO
     from fastapi.responses import StreamingResponse
 
-    # Get latest WIP snapshots
-    wip_service = WIPService(db)
-    wip_data = wip_service.get_latest_wip_snapshots()
+    # Get latest WIP snapshots using the same logic as get_latest_wip_snapshots
+    # Subquery to get the latest report date for each project
+    latest_dates = (
+        db.query(
+            WIPSnapshot.project_id,
+            func.max(WIPSnapshot.report_date).label("latest_date"),
+        )
+        .group_by(WIPSnapshot.project_id)
+        .subquery()
+    )
+
+    # Get WIP snapshots with the latest dates
+    wip_snapshots = (
+        db.query(WIPSnapshot, Project.name.label("project_name"))
+        .join(Project)
+        .join(
+            latest_dates,
+            (WIPSnapshot.project_id == latest_dates.c.project_id)
+            & (WIPSnapshot.report_date == latest_dates.c.latest_date),
+        )
+        .order_by(WIPSnapshot.job_number)
+        .all()
+    )
 
     # Convert to DataFrame
     data_for_export = []
-    for wip in wip_data:
+    for wip, project_name in wip_snapshots:
         data_for_export.append(
             {
                 "Job #": wip.job_number,
-                "Project Name": wip.project_name,
+                "Project Name": project_name,
                 "Original Contract": wip.current_month_original_contract_amount,
                 "Change Orders": wip.current_month_change_order_amount,
                 "Total Contract": wip.current_month_total_contract_amount,
