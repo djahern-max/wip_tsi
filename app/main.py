@@ -4,6 +4,8 @@ from fastapi.security import HTTPBearer
 
 from app.core.config import settings
 from app.api.endpoints import auth, projects, wip, explanations, users
+from fastapi.routing import APIRoute
+from fastapi.responses import PlainTextResponse
 
 # Create FastAPI app
 app = FastAPI(
@@ -46,6 +48,20 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": settings.APP_NAME}
+
+
+@app.get("/routes-simple", response_class=PlainTextResponse)
+async def get_routes_simple():
+    """
+    Returns a concise list of all routes with their paths and methods.
+    """
+    routes = []
+    for route in app.routes:
+        if isinstance(route, APIRoute):
+            methods = ", ".join(route.methods)
+            routes.append(f"{methods}: {route.path}")
+
+    return "\n".join(routes)
 
 
 if __name__ == "__main__":
