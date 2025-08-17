@@ -28,6 +28,8 @@ class ExplanationResponse(ExplanationBase):
     wip_snapshot_id: int
     created_by: int
     created_by_name: Optional[str] = None  # Will be populated from user relationship
+    created_by_first_name: Optional[str] = None  # ADD THIS
+    created_by_last_name: Optional[str] = None  # ADD THIS
     created_at: datetime
     updated_at: datetime
 

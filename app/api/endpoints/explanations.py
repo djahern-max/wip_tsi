@@ -34,7 +34,12 @@ def get_wip_explanations(
         )
 
     query = (
-        db.query(CellExplanation, User.username.label("created_by_name"))
+        db.query(
+            CellExplanation,
+            User.username.label("created_by_name"),
+            User.first_name.label("created_by_first_name"),  # ADD THIS
+            User.last_name.label("created_by_last_name"),  # ADD THIS
+        )
         .join(User, CellExplanation.created_by == User.id)
         .filter(CellExplanation.wip_snapshot_id == wip_snapshot_id)
     )
@@ -45,9 +50,11 @@ def get_wip_explanations(
     explanations = query.order_by(CellExplanation.created_at.desc()).all()
 
     result = []
-    for explanation, created_by_name in explanations:
+    for explanation, created_by_name, first_name, last_name in explanations:
         explanation_response = ExplanationResponse.from_orm(explanation)
         explanation_response.created_by_name = created_by_name
+        explanation_response.created_by_first_name = first_name  # ADD THIS
+        explanation_response.created_by_last_name = last_name  # ADD THIS
         result.append(explanation_response)
 
     return result
@@ -65,7 +72,12 @@ def get_field_explanation(
     """Get explanation for a specific field"""
 
     explanation_data = (
-        db.query(CellExplanation, User.username.label("created_by_name"))
+        db.query(
+            CellExplanation,
+            User.username.label("created_by_name"),
+            User.first_name.label("created_by_first_name"),  # ADD THIS
+            User.last_name.label("created_by_last_name"),  # ADD THIS
+        )
         .join(User, CellExplanation.created_by == User.id)
         .filter(
             CellExplanation.wip_snapshot_id == wip_snapshot_id,
@@ -81,9 +93,11 @@ def get_field_explanation(
             detail="No explanation found for this field",
         )
 
-    explanation, created_by_name = explanation_data
+    explanation, created_by_name, first_name, last_name = explanation_data
     explanation_response = ExplanationResponse.from_orm(explanation)
     explanation_response.created_by_name = created_by_name
+    explanation_response.created_by_first_name = first_name  # ADD THIS
+    explanation_response.created_by_last_name = last_name  # ADD THIS
 
     return explanation_response
 
@@ -138,9 +152,11 @@ def create_explanation(
     db.commit()
     db.refresh(db_explanation)
 
-    # Return with user name
+    # Return with user name and initials
     explanation_response = ExplanationResponse.from_orm(db_explanation)
     explanation_response.created_by_name = current_user.username
+    explanation_response.created_by_first_name = current_user.first_name
+    explanation_response.created_by_last_name = current_user.last_name
 
     return explanation_response
 
